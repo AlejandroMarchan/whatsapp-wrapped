@@ -1,0 +1,36 @@
+body {
+    /* background-color:#f3f6f8; */
+    overflow-x: hidden;
+}
+
+#upload-chat {
+    font-size: 1.25rem;
+    width: 80%;
+    height: 100px;
+    line-height: 60px;
+    border-width: 1px;
+    border-style: dashed;
+    border-radius: 5px;
+    text-align: center;
+    margin: auto;
+    padding-top: 15px;
+}
+
+.dash-graph {
+    width: 60vw;
+    margin: auto;
+}
+
+.select-inpt {
+    width: 50%;
+}
+
+@media (max-width: 1000px) {
+    #upload-chat {
+        width: 90%;
+    }
+
+    .dash-graph {
+        width: 100vw;
+    }
+}
