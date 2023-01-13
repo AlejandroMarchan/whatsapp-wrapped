@@ -1,10 +1,9 @@
 requests
 dash
 gunicorn
-dash-bootstrap-components
-dash_mantine_components
-dash-extensions
-rich
-pandas
-plotly
-spacy
+dash_bootstrap_components==1.0.3
+dash_extensions==0.1.10
+dash_mantine_components==0.10.2
+pandas==1.4.4
+plotly==5.7.0
+spacy==3.4.4
