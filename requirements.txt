@@ -5,3 +5,5 @@ dash-bootstrap-components
 dash_mantine_components
 dash-extensions
 rich
+pandas
+plotly
