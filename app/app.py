@@ -1,27 +1,17 @@
+import dash_mantine_components as dmc
+import dash_bootstrap_components as dbc
+from dash_extensions.enrich import Input, Output, State, html, dcc
+from dash_extensions.enrich import DashProxy, MultiplexerTransform, LogTransform, NoOutputTransform
 import logging
 import sys
 import os
-import re
-import base64
-import zipfile
-import tempfile
 import calendar
-from datetime import datetime
 import pandas as pd
 import plotly.express as px
+from .chat_processor.utils import extract_messages_from_chat, get_words_df
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-from spacy.lang.es import Spanish
-nlp = Spanish()
-
-STOPWORDS = []
-
-with open('app/assets/stopwords-es.txt', 'r') as f:
-    STOPWORDS = f.read().splitlines()
-
-STOPWORDS += ['(', ')', '.', '"', "'", ',', ':', ';', '?', '¿', '¡', '!', 'º', 'ª', '%', '/', "\\", '*', '+', '-',
-        '=', '#', '€', '-', '_', '\n', '&', '@', '[', ']', '>', '<', "'", '\t', '️']
 
 # Init logging
 logging.basicConfig(
@@ -34,16 +24,13 @@ logging.basicConfig(
 log = logging.getLogger("app")
 log.setLevel(logging.INFO)
 
-from dash_extensions.enrich import DashProxy, MultiplexerTransform, LogTransform, NoOutputTransform
-from dash_extensions.enrich import Input, Output, State, html, dcc, dash_table
-import dash_bootstrap_components as dbc
-import dash_mantine_components as dmc
 
 app = DashProxy(
-    __name__, 
-    title="WhatsApp Wrapped", 
+    __name__,
+    title="WhatsApp Wrapped",
     transforms=[
-        MultiplexerTransform(),  # makes it possible to target an output multiple times in callbacks
+        # makes it possible to target an output multiple times in callbacks
+        MultiplexerTransform(),
         NoOutputTransform(),
         LogTransform()  # makes it possible to write log messages to a Dash component
     ],
@@ -81,7 +68,8 @@ app.layout = html.Div(
                             children=html.Div(
                                 [
                                     'Drop or ',
-                                    html.A('Select the exported chat (ZIP)', style={"cursor": "pointer", 'color': 'var(--bs-primary)'})
+                                    html.A('Select the exported chat (ZIP)', style={
+                                           "cursor": "pointer", 'color': 'var(--bs-primary)'})
                                 ]
                             ),
                             accept="zip,application/octet-stream,application/zip,application/x-zip,application/x-zip-compressed",
@@ -98,7 +86,7 @@ app.layout = html.Div(
             }
         ),
         html.Div(
-                [
+            [
                 dbc.Row(
                     [
                         html.H4(
@@ -197,17 +185,18 @@ app.layout = html.Div(
     }
 )
 
+
 def create_bar_plot(df, x, y, color, title, x_title, y_title, legend_title, showlegend=True):
     fig = px.bar(
-        df, 
-        x=x, 
+        df,
+        x=x,
         y=y,
         title=title,
-        color=color, 
+        color=color,
         # color_discrete_map=color_dict
     )
     fig.update_layout(
-        xaxis_title=x_title, 
+        xaxis_title=x_title,
         yaxis_title=y_title,
         legend_title=legend_title,
         showlegend=showlegend
@@ -215,45 +204,6 @@ def create_bar_plot(df, x, y, color, title, x_title, y_title, legend_title, show
 
     return fig
 
-
-def get_words_df(chat_df):
-    messages_df = chat_df[
-        (chat_df['message'] != 'audio omitido') &
-        (chat_df['message'] != 'sticker omitido') &
-        (chat_df['message'] != 'Video omitido') &
-        (chat_df['message'] != 'imagen omitida') &
-        (chat_df['message'] != 'GIF omitido')
-    ][['person', 'message']]
-
-    wordle_words = [
-        'https://wordle.danielfrg.com',
-        'https://lapalabradeldia.com/',
-        'Wordle',
-        'HeardlEsp'
-    ]
-
-    words = []
-
-    for row in messages_df.values:
-        person = row[0]
-        message = row[1]
-
-        # Remove Wordle messages
-        if any([word in message for word in wordle_words]):
-            continue
-
-        for token in nlp(message):
-            word = token.text.lower().strip()
-
-            if  word != '' and word not in STOPWORDS:
-                words.append({
-                    'person': person,
-                    'word': word
-                })
-
-    words_df = pd.DataFrame(words)
-
-    return words_df
 
 @app.callback(
     Output('graphs-div', 'style'),
@@ -272,57 +222,21 @@ def get_words_df(chat_df):
     prevent_initial_call=True
 )
 def upload_chat(file, filename):
-    fd, path = tempfile.mkstemp(suffix='.zip')
-
-    chat = ''
-
-    try:
-        file = file.split('base64,')[1]
-
-        with os.fdopen(fd, 'wb') as tmp:
-            tmp.write(base64.b64decode(file))
-
-        archive = zipfile.ZipFile(path, 'r')
-        chat = archive.read('_chat.txt').decode()
-        archive.close()
-    except Exception as e:
-        print('The following error happened wile reading the ZIP file: ', e)
-    finally:
-        os.remove(path)
-
-    messages = []
-    try:
-        for line in chat.split('\n'):
-            # Remove LTR mark
-            line = line.replace('‎', '').replace('\r', '')
-            # Extract the date and time, sender name and message sent
-            regex_res = re.findall(r'\[(.+?)\] (.+?): (.*)', line)
-            if len(regex_res) > 0:
-                date, person, message = regex_res[0]
-                # Convert the date and time into a datetime object
-                date = datetime.strptime(date, '%d/%m/%y, %H:%M:%S')
-                if person != 'Tú' and 'Los mensajes y las llamadas están cifrados de extremo a extremo. Nadie fuera de este chat, ni siquiera WhatsApp, puede leerlos ni escucharlos.' not in message:
-                    messages.append({
-                        'date': date,
-                        'person': person,
-                        'message': message
-                    })
-            elif len(messages) > 0:
-                messages[-1]['message'] += ' ' + line
-    except Exception as e:
-        print('The following error happened wile parsing the chat: ', e)
+    log.info('Uploading chat...')
+    chat_name = filename.split(' - ')[1].replace('.zip', '')
+    messages = extract_messages_from_chat(file, chat_name)
 
     chat_df = pd.DataFrame(messages)
 
     n_messages_by_person_df = chat_df \
-                                .groupby('person') \
-                                .agg(n_messages = ('person', 'size')) \
-                                .reset_index() \
-                                .sort_values('n_messages', ascending = False)
+        .groupby('person') \
+        .agg(n_messages=('person', 'size')) \
+        .reset_index() \
+        .sort_values('n_messages', ascending=False)
 
     n_messages_by_person_fig = create_bar_plot(
-        n_messages_by_person_df, 
-        x='person', 
+        n_messages_by_person_df,
+        x='person',
         y='n_messages',
         color='person',
         title='Número de mensajes enviados por persona',
@@ -333,16 +247,16 @@ def upload_chat(file, filename):
     )
 
     n_messages_by_month_and_person_df = chat_df \
-                                            .groupby([chat_df.person, chat_df.date.dt.month]) \
-                                            .agg(n_messages = ('person', 'size')) \
-                                            .reset_index() \
-                                            .sort_values(['date', 'person'])
+        .groupby([chat_df.person, chat_df.date.dt.month]) \
+        .agg(n_messages=('person', 'size')) \
+        .reset_index() \
+        .sort_values(['date', 'person'])
     n_messages_by_month_and_person_df['month_name'] = n_messages_by_month_and_person_df['date'] \
-                                                        .apply(lambda x: calendar.month_name[x].capitalize())
+        .apply(lambda x: calendar.month_name[x].capitalize())
 
     n_messages_by_month_and_person_fig = create_bar_plot(
-        n_messages_by_month_and_person_df, 
-        x='month_name', 
+        n_messages_by_month_and_person_df,
+        x='month_name',
         y='n_messages',
         color='person',
         title='Número de mensajes enviados por mes por persona',
@@ -352,14 +266,14 @@ def upload_chat(file, filename):
     )
 
     n_messages_by_year_and_person_df = chat_df \
-                                            .groupby([chat_df.person, chat_df.date.dt.year]) \
-                                            .agg(n_messages = ('person', 'size')) \
-                                            .reset_index() \
-                                            .sort_values(['date', 'person'])
+        .groupby([chat_df.person, chat_df.date.dt.year]) \
+        .agg(n_messages=('person', 'size')) \
+        .reset_index() \
+        .sort_values(['date', 'person'])
 
     n_messages_by_year_and_person_fig = create_bar_plot(
-        n_messages_by_year_and_person_df, 
-        x='date', 
+        n_messages_by_year_and_person_df,
+        x='date',
         y='n_messages',
         color='person',
         title='Número de mensajes enviados por año por persona',
@@ -369,14 +283,14 @@ def upload_chat(file, filename):
     )
 
     n_messages_by_hour_and_person_df = chat_df \
-                                            .groupby([chat_df.person, chat_df.date.dt.hour]) \
-                                            .agg(n_messages = ('person', 'size')) \
-                                            .reset_index() \
-                                            .sort_values(['date', 'person'])
+        .groupby([chat_df.person, chat_df.date.dt.hour]) \
+        .agg(n_messages=('person', 'size')) \
+        .reset_index() \
+        .sort_values(['date', 'person'])
 
     n_messages_by_hour_and_person_fig = create_bar_plot(
-        n_messages_by_hour_and_person_df, 
-        x='date', 
+        n_messages_by_hour_and_person_df,
+        x='date',
         y='n_messages',
         color='person',
         title='Número de mensajes enviados por hora por persona',
@@ -386,15 +300,15 @@ def upload_chat(file, filename):
     )
 
     aux_df = chat_df \
-                .groupby([chat_df.person, chat_df.date.dt.date]) \
-                .agg(n_messages = ('person', 'size')) \
-                .reset_index() \
-                .sort_values(['date', 'person'])
+        .groupby([chat_df.person, chat_df.date.dt.date]) \
+        .agg(n_messages=('person', 'size')) \
+        .reset_index() \
+        .sort_values(['date', 'person'])
 
     # avg_messages_in_day_by_person_df = aux_df \
     #                                     .groupby('person') \
     #                                     .agg(
-    #                                         avg_messages = ('n_messages', 'mean'), 
+    #                                         avg_messages = ('n_messages', 'mean'),
     #                                         max_messages = ('n_messages', 'max'),
     #                                         min_messages = ('n_messages', 'min'),
     #                                     ) \
@@ -409,16 +323,17 @@ def upload_chat(file, filename):
         (chat_df['message'] == 'GIF omitido')
     ][['person', 'message']]
 
-    files_df['file'] = files_df['message'].apply(lambda x: x.replace(' omitido', '').replace(' omitida', ''))
+    files_df['file'] = files_df['message'].apply(
+        lambda x: x.replace(' omitido', '').replace(' omitida', ''))
 
     files_by_type_df = files_df \
-                .groupby(['person', 'file']) \
-                .agg(n_files = ('person', 'size')) \
-                .reset_index()
+        .groupby(['person', 'file']) \
+        .agg(n_files=('person', 'size')) \
+        .reset_index()
 
     files_by_type_fig = create_bar_plot(
-        files_by_type_df, 
-        x='file', 
+        files_by_type_df,
+        x='file',
         y='n_files',
         color='person',
         title='Archivos enviados en la conversación por persona',
@@ -440,17 +355,18 @@ def upload_chat(file, filename):
 
     words_df = get_words_df(chat_df)
 
-    return  None, \
-            f'La conversación tiene {chat_df.shape[0]} mensajes enviados.', \
-            n_messages_by_person_fig, \
-            n_messages_by_month_and_person_fig, \
-            n_messages_by_year_and_person_fig, \
-            n_messages_by_hour_and_person_fig, \
-            f'La conversación tiene {words_df.shape[0]} palabras enviadas quitando stopwords y símbolos.', \
-            words_df.to_dict('records'), \
-            person_data, \
-            person_data[0]['value'], \
-            files_by_type_fig
+    return None, \
+        f'La conversación tiene {chat_df.shape[0]} mensajes enviados.', \
+        n_messages_by_person_fig, \
+        n_messages_by_month_and_person_fig, \
+        n_messages_by_year_and_person_fig, \
+        n_messages_by_hour_and_person_fig, \
+        f'La conversación tiene {words_df.shape[0]} palabras enviadas quitando stopwords y símbolos.', \
+        words_df.to_dict('records'), \
+        person_data, \
+        person_data[0]['value'], \
+        files_by_type_fig
+
 
 @app.callback(
     Output('most-repeated-words-graph', 'figure'),
@@ -461,26 +377,27 @@ def load_words_graphs(words_records):
     words_df = pd.DataFrame(words_records)
 
     most_repeated_words_df = words_df \
-            .groupby(['word']) \
-            .agg(n_times = ('word', 'size')) \
-            .reset_index() \
-            .sort_values('n_times', ascending=False) \
-            .head(30)
+        .groupby(['word']) \
+        .agg(n_times=('word', 'size')) \
+        .reset_index() \
+        .sort_values('n_times', ascending=False) \
+        .head(30)
 
     most_repeated_words_fig = px.bar(
-        most_repeated_words_df, 
-        x='word', 
+        most_repeated_words_df,
+        x='word',
         y='n_times',
         title='Palabras más repetidas en la conversación',
     )
     most_repeated_words_fig.update_layout(
-        xaxis_title="Palabra", 
+        xaxis_title="Palabra",
         yaxis_title="Número de veces repetida",
     )
 
     most_repeated_words_fig.update_xaxes(tickangle=30)
-    
+
     return most_repeated_words_fig
+
 
 @app.callback(
     Output('most-repeated-words-by-person-graph', 'figure'),
@@ -492,23 +409,27 @@ def load_interactive_words_graphs(person, words_records):
     words_df = pd.DataFrame(words_records)
 
     most_repeated_words_by_person_df = words_df \
-            .groupby(['person', 'word']) \
-            .agg(n_times = ('person', 'size')) \
-            .reset_index() \
-            .sort_values('n_times', ascending=False)
+        .groupby(['person', 'word']) \
+        .agg(n_times=('person', 'size')) \
+        .reset_index() \
+        .sort_values('n_times', ascending=False)
+
+    print(
+        most_repeated_words_by_person_df[most_repeated_words_by_person_df['person'] == 'Luis Zarzoso Rodríguez'].head(30))
 
     most_repeated_words_by_person_fig = px.bar(
-        most_repeated_words_by_person_df[most_repeated_words_by_person_df['person'] == person].sort_values(by=['n_times'], ascending=False).head(30), 
-        x='word', 
+        most_repeated_words_by_person_df[most_repeated_words_by_person_df['person'] == person].sort_values(
+            by=['n_times'], ascending=False).head(30),
+        x='word',
         y='n_times',
         title=f'Palabras más repetidas en la conversación por {person}',
     )
     most_repeated_words_by_person_fig.update_layout(
-        xaxis_title="Palabra", 
+        xaxis_title="Palabra",
         yaxis_title="Número de veces repetida",
     )
     most_repeated_words_by_person_fig.update_xaxes(tickangle=30)
-    
+
     return most_repeated_words_by_person_fig
 
 
